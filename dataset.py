@@ -10,14 +10,14 @@ from PIL import Image
 def rescale(x):
     return (x * 0.5) + 0.5
 
-class CityPlacesDataset(Dataset):
+class CityScapesDataset(Dataset):
     def __init__(self, labels, scale, phase, maximum=None):
         super().__init__()
         self.scale = scale
         self.labels = labels
-        self.rgb_paths = sorted(glob.glob(os.path.join('CityPlacesDataset', 'leftImg8bit', phase, '*/*.png')))
-        self.label_paths = sorted(glob.glob(os.path.join('CityPlacesDataset', 'gtFine', phase, '*/*labelIds.png')))
-        self.img_tfm = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5,0.5,0.5], [0.5, 0.5, 0.5])])
+        self.rgb_paths = sorted(glob.glob(os.path.join('CityScapesDataset', 'leftImg8bit', phase, '*/*.png')))
+        self.label_paths = sorted(glob.glob(os.path.join('CityScapesDataset', 'gtFine', phase, '*/*labelIds.png')))
+        self.img_tfm = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5,0.5,0.5], [0.5,0.5,0.5])])
 
         if not maximum is None and maximum < len(self.rgb_paths):
             self.rgb_paths = self.rgb_paths[:maximum]

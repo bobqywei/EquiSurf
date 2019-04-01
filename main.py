@@ -7,7 +7,7 @@ from tensorboardX import SummaryWriter
 from models.srresnet import SRResNet
 from models.edsr import EDSR
 from models.wdsr import WDSR_A
-from dataset import CityPlacesDataset
+from dataset import CityScapesDataset
 
 """
 CityScapes segmentation class labels:
@@ -56,7 +56,7 @@ class Experiment():
             self.num_epochs = 500
             self.lr_update_epochs = None
             self.lr_update_factor = None
-            self.loss = torch.nn.MSELoss()
+            self.loss = torch.nn.MSELoss(reduction='sum')
             print("Created model SRResNet")
 
         elif model == 'edsr':
@@ -65,7 +65,7 @@ class Experiment():
             self.num_epochs = 500
             self.lr_update_epochs = 50
             self.lr_update_factor = 0.5
-            self.loss = torch.nn.L1Loss()
+            self.loss = torch.nn.L1Loss(reduction='sum')
             print("Created model EDSR")
 
         elif model == 'wdsr':
@@ -74,7 +74,7 @@ class Experiment():
             self.num_epochs = 500
             self.lr_update_epochs = 50
             self.lr_update_factor = 0.5
-            self.loss = torch.nn.L1Loss()
+            self.loss = torch.nn.L1Loss(reduction='sum')
             print("Created model WDSR")
 
         tensorboard_dir = os.path.join('tensorboard', name)
@@ -91,7 +91,6 @@ class Experiment():
             self.model.load_state_dict(torch.load(pretrain))
 
         self.model.cuda()
-        self.loss.cuda()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
 
@@ -102,13 +101,11 @@ def main():
     if not torch.cuda.is_available():
         raise Exception('Selected GPU with id {} not found'.format(args.gpu))
 
-    torch.backends.cudnn.benchmark = True
-
-    train_dataset = CityPlacesDataset(args.train_lbls, args.scale, 'train')
+    train_dataset = CityScapesDataset(args.train_lbls, args.scale, 'train')
     train_dataloader = torch.utils.data.DataLoader(dataset=train_dataset, num_workers=4, batch_size=args.batch_size, shuffle=True)
     print("Loaded training dataset with {} images".format(len(train_dataset)))
 
-    val_dataset = CityPlacesDataset(args.test_lbls, args.scale, 'val', maximum=args.val_max)
+    val_dataset = CityScapesDataset(args.test_lbls, args.scale, 'val', maximum=args.val_max)
     val_dataloader = torch.utils.data.DataLoader(dataset=val_dataset, num_workers=1, batch_size=1)
     print("Loaded val dataset with {} images".format(len(val_dataset)))
 
@@ -141,27 +138,39 @@ def train(experiment, dataloader, epoch, log_iters):
     experiment.model.train()
 
     running_loss = 0.0
+    recorded_datapoints = 0
     for iteration, batch in enumerate(dataloader, 1):
         overall_iter = iteration * dataloader.batch_size + (epoch-1) * len(dataloader.dataset)
 
-        input, gt = batch[0].requires_grad_(True).cuda(), batch[1].cuda()
-        input = experiment.model(input)
-
         if len(batch) == 3:
             mask = batch[2].cuda()
-            input = input * mask
-            gt = gt * mask
+            num_pixels = torch.sum(mask == 1).data.item()
+            if num_pixels == 0:
+                print("===> Epoch[{}]({}/{}): no pixels in batch correspond to specified labels".format(epoch, iteration, len(dataloader)))
+                del mask
+                continue
 
-        loss = experiment.loss(input, gt)
+        input, gt = batch[0].requires_grad_(True).cuda(), batch[1].cuda()
+        output = experiment.model(input)
+
+        if len(batch) == 3:
+            output = output * mask
+            gt = gt * mask
+        else:
+            num_pixels = output.numel()
+
+        loss = experiment.loss(output, gt) / num_pixels
         experiment.optimizer.zero_grad()
         loss.backward()
         experiment.optimizer.step()
 
         running_loss += loss.data.item()
+        recorded_datapoints += 1
 
-        if iteration % log_iters == 0:
-            data = running_loss / log_iters
+        if recorded_datapoints == log_iters:
+            data = running_loss / recorded_datapoints
             running_loss = 0.0
+            recorded_datapoints = 0
             print("===> Epoch[{}]({}/{}): Loss: {:.5}".format(epoch, iteration, len(dataloader), data))
             experiment.writer.add_scalar("Train/Loss", data, overall_iter)
 
@@ -171,18 +180,29 @@ def validate(model, criterion, dataloader, writer, epoch):
     model.eval()
 
     avg_loss = 0.0
+    skipped_samples = 0
     for iteration, sample in enumerate(dataloader):
+
+        if len(sample) == 3:
+            mask = sample[2].cuda()
+            num_pixels = torch.sum(mask == 1).data.item()
+            if num_pixels == 0:
+                skipped_samples += 1
+                del mask
+                continue
+
         input, gt = sample[0].cuda(), sample[1].cuda()
         output = model(input)
 
         if len(sample) == 3:
-            mask = sample[2].cuda()
             output = output * mask
             gt = gt * mask
+        else:
+            num_pixels = output.numel()
 
-        avg_loss += criterion(output, gt).data.item()
+        avg_loss += criterion(output, gt).data.item() / num_pixels
 
-    avg_loss /= dataset_size
+    avg_loss /= (dataset_size - skipped_samples)
     print("===> Loss: {:.5}".format(avg_loss))
     writer.add_scalar('Validation/Loss', avg_loss, epoch)
 

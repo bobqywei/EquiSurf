@@ -20,22 +20,21 @@ class _Residual_Block(nn.Module):
         return output
 
 class Upsampler(nn.Sequential):
-    def __init__(self, scale, n_feats, act=False, bias=False):
+    def __init__(self, scale, n_feats, conv=True, act=False, bias=False):
         m = []
         if (scale & (scale - 1)) == 0:    # Is scale = 2^n?
             for _ in range(int(math.log(scale, 2))):
-                m.append(nn.Conv2d(n_feats, 4 * n_feats, 3, stride=1, padding=1, bias=bias))
+                if conv is True:
+                    m.append(nn.Conv2d(n_feats, 4 * n_feats, 3, stride=1, padding=1, bias=bias))
                 m.append(nn.PixelShuffle(2))
                 if act is True:
                     m.append(nn.LeakyReLU(0.2, inplace=True))
-
-        elif scale == 3:
-            m.append(nn.Conv2d(n_feats, 9 * n_feats, 3, stride=1, padding=1, bias=bias))
-            m.append(nn.PixelShuffle(3))
+        else:
+            if conv is True:
+                m.append(nn.Conv2d(n_feats, scale*scale * n_feats, 3, stride=1, padding=1, bias=bias))
+            m.append(nn.PixelShuffle(scale))
             if act is True:
                 m.append(nn.LeakyReLU(0.2, inplace=True))
-        else:
-            raise NotImplementedError
 
         super(Upsampler, self).__init__(*m)
 

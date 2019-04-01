@@ -1,7 +1,9 @@
 import math
 import torch
 import torch.nn as nn
+
 from torch.nn.parameter import Parameter
+from . srresnet import Upsampler
 
 class Block(nn.Module):
     def __init__(
@@ -37,8 +39,8 @@ class WDSR_A(nn.Module):
 
         # define tail module
         out_feats = scale*scale*3
-        tail = [wn(nn.Conv2d(n_feats, out_feats, 3, padding=1)), nn.PixelShuffle(scale)]
-        skip = [wn(nn.Conv2d(3, out_feats, 5, padding=2)), nn.PixelShuffle(scale)]
+        tail = [wn(nn.Conv2d(n_feats, out_feats, 3, padding=1)), Upsampler(scale, n_feats, conv=False)]
+        skip = [wn(nn.Conv2d(3, out_feats, 5, padding=2)), Upsampler(scale, n_feats, conv=False)]
 
         # make object members
         self.head = nn.Sequential(*head)
