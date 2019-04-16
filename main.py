@@ -8,12 +8,13 @@ from models.srresnet import SRResNet
 from models.edsr import EDSR
 from models.wdsr import WDSR_A
 from dataset import CityScapesDataset
+from torchvision.utils import save_image
 
 """
 CityScapes segmentation class labels:
 
-0  - unlabeled        1  - ego vehicle        2  - rectification border  3  - out of roi
-4  - static           5  - dynamic            6  - ground
+0  - unlabeled        1  - ego vehicle      2  - rectification border  3  - out of roi
+4  - static           5  - dynamic          6  - ground
 
 7  - road             8  - sidewalk         9  - parking            10 - rail track
 
@@ -33,6 +34,7 @@ parser = argparse.ArgumentParser(description="EquiSurf Super-resolution Experime
 parser.add_argument('--name', type=str, help='Set experiment name', required=True)
 parser.add_argument('--model', type=str, help='Set SR Model to use', required=True)
 parser.add_argument('--scale', type=int, help='Set super-resolution factor', required=True)
+parser.add_argument('--crop_size', type=int, default=None, help='Set desired image dimension (crop_size x crop_size)')
 
 """Example Usage: ... --train_lbls 26 27 28 29 ... """
 parser.add_argument('--train_lbls', nargs='+', default=None, help='Set labels to be used in training => default: full image is used')
@@ -44,7 +46,7 @@ parser.add_argument('--batch_size', type=int, default=16, help='Set batch size d
 parser.add_argument('--val_max', type=int, default=None, help='Set max size for validation set => default: len(val_dataset)')
 parser.add_argument('--save_epochs', type=int, default=1, help='Set checkpoint save interval => default: 1')
 parser.add_argument('--val_epochs', type=int, default=1, help='Set validation interval => default: 1')
-parser.add_argument('--log_iters', type=int, default=10, help='Set training log interval (batches) => default: 10')
+parser.add_argument('--log_iters', type=int, default=100, help='Set training log interval (number of images) => default: 100')
 
 
 class Experiment():
@@ -101,13 +103,15 @@ def main():
     if not torch.cuda.is_available():
         raise Exception('Selected GPU with id {} not found'.format(args.gpu))
 
-    train_dataset = CityScapesDataset(args.train_lbls, args.scale, 'train')
+    train_dataset = CityScapesDataset(args.train_lbls, args.scale, 'train', crop_size=args.crop_size)
     train_dataloader = torch.utils.data.DataLoader(dataset=train_dataset, num_workers=4, batch_size=args.batch_size, shuffle=True)
-    print("Loaded training dataset with {} images".format(len(train_dataset)))
+    print("Loaded training dataset with {} images and labels:".format(len(train_dataset)))
+    print(args.train_lbls)
 
-    val_dataset = CityScapesDataset(args.test_lbls, args.scale, 'val', maximum=args.val_max)
+    val_dataset = CityScapesDataset(args.test_lbls, args.scale, 'val', crop_size=args.crop_size, maximum=args.val_max)
     val_dataloader = torch.utils.data.DataLoader(dataset=val_dataset, num_workers=1, batch_size=1)
-    print("Loaded val dataset with {} images".format(len(val_dataset)))
+    print("Loaded val dataset with {} images and labels:".format(len(val_dataset)))
+    print(args.test_lbls)
 
     experiment = Experiment(args.name, args.model, args.scale, args.pretrain)
 
@@ -138,17 +142,19 @@ def train(experiment, dataloader, epoch, log_iters):
     experiment.model.train()
 
     running_loss = 0.0
-    recorded_datapoints = 0
+    images_computed = 0
+
     for iteration, batch in enumerate(dataloader, 1):
         overall_iter = iteration * dataloader.batch_size + (epoch-1) * len(dataloader.dataset)
 
         if len(batch) == 3:
-            mask = batch[2].cuda()
+            mask = batch[2]
             num_pixels = torch.sum(mask == 1).data.item()
             if num_pixels == 0:
                 print("===> Epoch[{}]({}/{}): no pixels in batch correspond to specified labels".format(epoch, iteration, len(dataloader)))
                 del mask
                 continue
+            mask = mask.cuda()
 
         input, gt = batch[0].requires_grad_(True).cuda(), batch[1].cuda()
         output = experiment.model(input)
@@ -165,12 +171,13 @@ def train(experiment, dataloader, epoch, log_iters):
         experiment.optimizer.step()
 
         running_loss += loss.data.item()
-        recorded_datapoints += 1
+        images_computed += dataloader.batch_size
 
-        if recorded_datapoints == log_iters:
-            data = running_loss / recorded_datapoints
+        if recorded_datapoints >= log_iters:
+            # computes the avg per pixel loss over current interval
+            data = running_loss / (images_computed / dataloader.batch_size)
             running_loss = 0.0
-            recorded_datapoints = 0
+            images_computed = 0
             print("===> Epoch[{}]({}/{}): Loss: {:.5}".format(epoch, iteration, len(dataloader), data))
             experiment.writer.add_scalar("Train/Loss", data, overall_iter)
 
@@ -201,6 +208,10 @@ def validate(model, criterion, dataloader, writer, epoch):
             num_pixels = output.numel()
 
         avg_loss += criterion(output, gt).data.item() / num_pixels
+
+        output = output * 0.5 + 0.5
+        save_image(output, 'test.png')
+
 
     avg_loss /= (dataset_size - skipped_samples)
     print("===> Loss: {:.5}".format(avg_loss))
