@@ -173,7 +173,7 @@ def train(experiment, dataloader, epoch, log_iters):
         running_loss += loss.data.item()
         images_computed += dataloader.batch_size
 
-        if recorded_datapoints >= log_iters:
+        if images_computed >= log_iters:
             # computes the avg per pixel loss over current interval
             data = running_loss / (images_computed / dataloader.batch_size)
             running_loss = 0.0
