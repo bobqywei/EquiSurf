@@ -22,8 +22,8 @@ class CityScapesDataset(Dataset):
         self.scale = scale
         self.labels = labels
         self.crop_size = crop_size
-        self.rgb_paths = sorted(glob.glob(os.path.join('/scratch/gobi1/chuhang/CityScapes/leftImg8bit_trainvaltest', 'leftImg8bit', phase, '*/*.png')))
-        self.label_paths = sorted(glob.glob(os.path.join('/scratch/gobi1/chuhang/CityScapes/gtFine_trainvaltest', 'gtFine', phase, '*/*labelIds.png')))
+        self.rgb_paths = sorted(glob.glob(os.path.join('CityScapesDataset', 'leftImg8bit', phase, '*/*.png')))
+        self.label_paths = sorted(glob.glob(os.path.join('CityScapesDataset', 'gtFine', phase, '*/*labelIds.png')))
         self.img_tfm = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5,0.5,0.5], [0.5,0.5,0.5])])
 
         if not maximum is None and maximum < len(self.rgb_paths):
@@ -93,8 +93,9 @@ class CityScapesDataset(Dataset):
     def create_valid_images(self):
         self.valid_masks = [None] * len(self.label_paths)
         self.offsets = [None] * len(self.label_paths)
+
         # Threshold value
-        k = (self.crop_size * self.crop_size) * 0.001
+        k = (self.crop_size * self.crop_size) * 0.0001
 
         for i in tqdm(range(len(self.label_paths))):
             img = np.array(Image.open(self.label_paths[i]))
@@ -110,47 +111,51 @@ class CityScapesDataset(Dataset):
 
             # Find tightest possible bounding box for all mask pixels
             result = measurements.find_objects(mask)[0]
-            start_y, stop_y = result[0].start, result[0].stop
-            start_x, stop_x = result[1].start, result[1].stop
+            start_y, stop_y, start_x, stop_x = result[0].start, result[0].stop, result[1].start, result[1].stop
 
-            # Only check values in or immediately surrounding bounding box
-            # expand the bounding box depending on desired crop size
-            half_crop = math.ceil(self.crop_size / 2)
-            if stop_y + half_crop > mask.shape[0]:
-                start_y = max(start_y - self.crop_size, 0)
-            elif start_y - half_crop < 0:
-                stop_y = min(stop_y + self.crop_size, mask.shape[0])
-            else:
-                start_y -= half_crop
-                stop_y += half_crop
+            # extend bounding box upwards (since point is at top left)
+            start_y = max(0, start_y - self.crop_size//2)
+            # bounding box is still smaller than crop size
+            if stop_y - start_y < self.crop_size:
+                diff = self.crop_size - (stop_y - start_y)
+                # force box as far upwards as needed
+                if start_y > 0:
+                    start_y -= min(diff, start_y)
+                    diff -= start_y
+                # push bounding box downwards if needed
+                if diff > 0:
+                    stop_y += diff
 
-            if stop_x + half_crop > mask.shape[1]:
-                start_x = max(start_x - self.crop_size, 0)
-            elif start_x - half_crop < 0:
-                stop_x = min(stop_x + self.crop_size, mask.shape[1])
-            else:
-                start_x -= half_crop
-                stop_x += half_crop
+            # extend bounding box left (since point is at top left)
+            start_x = max(0, start_x - self.crop_size//2)
+            if stop_x - start_x < self.crop_size:
+                diff = self.crop_size - (stop_x - start_x)
+                if start_x > 0:
+                    start_x -= min(diff, start_x)
+                    diff -= start_x
+                if diff > 0:
+                    stop_x += diff
 
             # Reduce semantic mask to approximate bounding box
             mask = mask[start_y : stop_y, start_x : stop_x]
             # Compute integral image for quick access to pixel coverage info
             integral_img = skimage.transform.integral.integral_image(mask)
             # Get top left indices of potential crop locations
-            indices = np.indices((integral_img.shape[0]-self.crop_size, integral_img.shape[1]-self.crop_size))
+            indices = np.indices((integral_img.shape[0] - (self.crop_size-1), integral_img.shape[1] - (self.crop_size-1)))
             # Only accept indices where mask pixels sum to more than k
-            valid_mask = integral_img[indices[0] + self.crop_size, indices[1] + self.crop_size] - integral_img[indices[0] + self.crop_size, indices[1]] - integral_img[indices[0], indices[1] + self.crop_size] + integral_img[indices[0], indices[1]] > k
+            valid_mask = integral_img[indices[0] + self.crop_size-1, indices[1] + self.crop_size-1] - integral_img[indices[0] + self.crop_size-1, indices[1]] - integral_img[indices[0], indices[1] + self.crop_size-1] + integral_img[indices[0], indices[1]] > k
 
             assert np.sum(valid_mask) > 0, "No possible crop satisfying threshold in {}".format(self.label_paths[i])
             # Cache mask and offset coords for valid crop locations
             self.valid_masks[i] = valid_mask
             self.offsets[i] = (start_y, start_x)
 
-
+# Unit test
 if __name__ == "__main__":
-    d = CityScapesDataset([26], 3, 'train', crop_size=512, maximum=10)
+    d = CityScapesDataset([26], 3, 'train', crop_size=800, maximum=10)
     # for i in tqdm(range(len(d))):
-    out = d.__getitem__(5)
+    r = random.randint(0, 9)
+    out = d.__getitem__(r)
     save_image(rescale(out[0]), 'lr.png')
     save_image(rescale(out[1]), 'temp.png')
     save_image(rescale(out[2]), 'mask.png')
