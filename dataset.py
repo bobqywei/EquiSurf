@@ -22,8 +22,8 @@ class CityScapesDataset(Dataset):
         self.scale = scale
         self.labels = labels
         self.crop_size = crop_size
-        self.rgb_paths = sorted(glob.glob(os.path.join('CityScapesDataset', 'leftImg8bit', phase, '*/*.png')))
-        self.label_paths = sorted(glob.glob(os.path.join('CityScapesDataset', 'gtFine', phase, '*/*labelIds.png')))
+        self.rgb_paths = sorted(glob.glob(os.path.join('/scratch/gobi1/chuhang/CityScapes/leftImg8bit_trainvaltest', 'leftImg8bit', phase, '*/*.png')))
+        self.label_paths = sorted(glob.glob(os.path.join('/scratch/gobi1/chuhang/CityScapes/gtFine_trainvaltest', 'gtFine', phase, '*/*labelIds.png')))
         self.img_tfm = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5,0.5,0.5], [0.5,0.5,0.5])])
 
         if not maximum is None and maximum < len(self.rgb_paths):
