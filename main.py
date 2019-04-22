@@ -47,6 +47,7 @@ parser.add_argument('--val_max', type=int, default=None, help='Set max size for 
 parser.add_argument('--save_epochs', type=int, default=1, help='Set checkpoint save interval => default: 1')
 parser.add_argument('--val_epochs', type=int, default=1, help='Set validation interval => default: 1')
 parser.add_argument('--log_iters', type=int, default=100, help='Set training log interval (number of images) => default: 100')
+parser.add_argument('--path_opt', type=int, default=0, help='Set dataset path options => default: 0')
 
 
 class Experiment():
@@ -103,12 +104,12 @@ def main():
     if not torch.cuda.is_available():
         raise Exception('Selected GPU with id {} not found'.format(args.gpu))
 
-    train_dataset = CityScapesDataset(args.train_lbls, args.scale, 'train', crop_size=args.crop_size)
+    train_dataset = CityScapesDataset(args.train_lbls, args.scale, 'train', crop_size=args.crop_size, path_option=args.path_opt)
     train_dataloader = torch.utils.data.DataLoader(dataset=train_dataset, num_workers=4, batch_size=args.batch_size, shuffle=True)
     print("Loaded training dataset with {} images and labels:".format(len(train_dataset)))
     print(args.train_lbls)
 
-    val_dataset = CityScapesDataset(args.test_lbls, args.scale, 'val', crop_size=args.crop_size, maximum=args.val_max)
+    val_dataset = CityScapesDataset(args.test_lbls, args.scale, 'val', crop_size=args.crop_size, maximum=args.val_max, path_option=args.path_opt)
     val_dataloader = torch.utils.data.DataLoader(dataset=val_dataset, num_workers=1, batch_size=1)
     print("Loaded val dataset with {} images and labels:".format(len(val_dataset)))
     print(args.test_lbls)
