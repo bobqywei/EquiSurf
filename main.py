@@ -146,7 +146,8 @@ def train(experiment, dataloader, epoch, log_iters):
     images_computed = 0
 
     for iteration, batch in enumerate(dataloader, 1):
-        overall_iter = iteration * dataloader.batch_size + (epoch-1) * len(dataloader.dataset)
+        batch_size = batch[0].shape[0]
+        overall_iter = iteration * batch_size + (epoch-1) * len(dataloader.dataset)
 
         if len(batch) == 3:
             mask = batch[2]
@@ -158,7 +159,6 @@ def train(experiment, dataloader, epoch, log_iters):
             mask = mask.cuda()
 
         input, gt = batch[0].requires_grad_(True).cuda(), batch[1].cuda()
-        print(input.size())
         output = experiment.model(input)
 
         if len(batch) == 3:
@@ -173,11 +173,11 @@ def train(experiment, dataloader, epoch, log_iters):
         experiment.optimizer.step()
 
         running_loss += loss.data.item()
-        images_computed += dataloader.batch_size
+        images_computed += batch_size
 
         if images_computed >= log_iters:
             # computes the avg per pixel loss over current interval
-            data = running_loss / (images_computed / dataloader.batch_size)
+            data = running_loss / (images_computed / batch_size)
             running_loss = 0.0
             images_computed = 0
             print("===> Epoch[{}]({}/{}): Loss: {:.5}".format(epoch, iteration, len(dataloader), data))

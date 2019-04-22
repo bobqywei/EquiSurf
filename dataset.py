@@ -100,17 +100,21 @@ class CityScapesDataset(Dataset):
 
         # Threshold value
         k = (self.crop_size * self.crop_size) * 0.0001
+        # Holds the indices of images to be removed (images with no valid
+        # valid pixels given specified labels)
+        to_remove = []
 
         for i in tqdm(range(len(self.label_paths))):
             img = np.array(Image.open(self.label_paths[i]))
             # Create semantic mask
             mask = np.zeros_like(img)
             for label in self.labels:
-                mask = np.logical_or(mask, img == label)
+                mask = np.logical_or(mask, img == int(label))
 
             # Skip if mask has no valid pixels
             num_pixels = np.sum(mask)
             if num_pixels == 0:
+                to_remove.append(i)
                 continue
 
             # Find tightest possible bounding box for all mask pixels
@@ -149,17 +153,29 @@ class CityScapesDataset(Dataset):
             # Only accept indices where mask pixels sum to more than k
             valid_mask = integral_img[indices[0] + self.crop_size-1, indices[1] + self.crop_size-1] - integral_img[indices[0] + self.crop_size-1, indices[1]] - integral_img[indices[0], indices[1] + self.crop_size-1] + integral_img[indices[0], indices[1]] > k
 
-            assert np.sum(valid_mask) > 0, "No possible crop satisfying threshold in {}".format(self.label_paths[i])
+            assert np.sum(valid_mask) > 0, "No possible crop satisfying threshold in {}, only {} valid pixels".format(self.label_paths[i], num_pixels)
             # Cache mask and offset coords for valid crop locations
             self.valid_masks[i] = valid_mask
             self.offsets[i] = (start_y, start_x)
 
+        # Remove the images that do not have valid pixels given specified labels
+        for i in list(reversed(to_remove)):
+            self.rgb_paths.pop(i)
+            self.label_paths.pop(i)
+            if i < len(self.valid_masks):
+                self.valid_masks.pop(i)
+                self.offsets.pop(i)
+
 # Unit test
 if __name__ == "__main__":
-    d = CityScapesDataset([26], 3, 'train', crop_size=800, maximum=10)
+    print("test")
+    d = CityScapesDataset([26], 2, 'train', crop_size=512, maximum=10)
     # for i in tqdm(range(len(d))):
-    r = random.randint(0, 9)
-    out = d.__getitem__(r)
-    save_image(rescale(out[0]), 'lr.png')
-    save_image(rescale(out[1]), 'temp.png')
-    save_image(rescale(out[2]), 'mask.png')
+    # r = random.randint(0, 9)
+    # out = d.__getitem__(r)
+    # save_image(rescale(out[0]), 'lr.png')
+    # save_image(rescale(out[1]), 'temp.png')
+    # save_image(rescale(out[2]), 'mask.png')
+    dataloader = torch.utils.data.DataLoader(dataset=d, num_workers=4, batch_size=4, shuffle=True)
+    for iter, data in enumerate(dataloader):
+        print("n_imgs:{} img_size{}".format(len(data), data[0].shape))
