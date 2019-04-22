@@ -157,6 +157,7 @@ def train(experiment, dataloader, epoch, log_iters):
             mask = mask.cuda()
 
         input, gt = batch[0].requires_grad_(True).cuda(), batch[1].cuda()
+        print(input.size())
         output = experiment.model(input)
 
         if len(batch) == 3:
