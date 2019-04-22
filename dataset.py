@@ -58,7 +58,7 @@ class CityScapesDataset(Dataset):
             # Randomly crop image to desired size
             if not self.crop_size is None:
                 new_width, new_height = gt.size[0]-self.crop_size, gt.size[1]-self.crop_size
-                rand_index = random.randint(0, new_height * new_width)
+                rand_index = random.randint(0, new_height * new_width - 1)
                 top_left_y, top_left_x = rand_index % new_height, rand_index // new_height
                 gt = gt.crop((top_left_x, top_left_y, top_left_x + self.crop_size, top_left_y + self.crop_size))
             # Return LR and GT images only
@@ -75,7 +75,7 @@ class CityScapesDataset(Dataset):
             valid_indices = self.valid_masks[index].nonzero()
             offset = self.offsets[index]
             # Randomly select valid crop location
-            rand_index = random.randint(0, valid_indices[0].shape[0])
+            rand_index = random.randint(0, valid_indices[0].shape[0] - 1)
             top_left = offset[0] + valid_indices[0][rand_index], offset[1] + valid_indices[1][rand_index]
             # Crop images at chosen location
             gt = gt.crop((top_left[1], top_left[0], top_left[1] + self.crop_size, top_left[0] + self.crop_size))
@@ -152,8 +152,12 @@ class CityScapesDataset(Dataset):
             indices = np.indices((integral_img.shape[0] - (self.crop_size-1), integral_img.shape[1] - (self.crop_size-1)))
             # Only accept indices where mask pixels sum to more than k
             valid_mask = integral_img[indices[0] + self.crop_size-1, indices[1] + self.crop_size-1] - integral_img[indices[0] + self.crop_size-1, indices[1]] - integral_img[indices[0], indices[1] + self.crop_size-1] + integral_img[indices[0], indices[1]] > k
+            # If no valid locations in mask, remove the image
+            # This occurs if total number of valid pixels is less than threshold
+            if np.sum(valid_mask) <= 0:
+                to_remove.append(i)
+                continue
 
-            assert np.sum(valid_mask) > 0, "No possible crop satisfying threshold in {}, only {} valid pixels".format(self.label_paths[i], num_pixels)
             # Cache mask and offset coords for valid crop locations
             self.valid_masks[i] = valid_mask
             self.offsets[i] = (start_y, start_x)
