@@ -56,7 +56,7 @@ class Experiment():
         if model == 'srresnet':
             self.model = SRResNet(scale)
             self.lr = 1e-4
-            self.num_epochs = 500
+            self.num_epochs = 2000
             self.lr_update_epochs = None
             self.lr_update_factor = None
             self.loss = torch.nn.MSELoss(reduction='sum')
